@@ -62,7 +62,10 @@ namespace WebAPIAutores.Middlewares
 
             var llave = llavesStringValues[0];
 
-            var llaveDB = await context.LlavesAPI.FirstOrDefaultAsync(x => x.Llave == llave);
+            var llaveDB = await context.LlavesAPI
+                .Include(x => x.RestriccionesDominio)
+                .Include(x => x.RestriccionesIP)
+                .FirstOrDefaultAsync(x => x.Llave == llave);
 
             if (llaveDB == null)
             {
@@ -96,7 +99,7 @@ namespace WebAPIAutores.Middlewares
                 }
             }
 
-            var superaRestricciones = PeticionSuperarAlgunaDeLasRestricciones(llaveDB, httpContext);
+            var superaRestricciones = PeticionSuperaAlgunaDeLasRestricciones(llaveDB, httpContext);
 
             if (!superaRestricciones)
             {
@@ -111,11 +114,11 @@ namespace WebAPIAutores.Middlewares
             await siguiente(httpContext);
 ;       }
 
-        private bool PeticionSuperarAlgunaDeLasRestricciones(LlaveAPI llaveAPI, HttpContext httpContext)
+        private bool PeticionSuperaAlgunaDeLasRestricciones(LlaveAPI llaveAPI, HttpContext httpContext)
         {
-            var hayRestricciiones = llaveAPI.RestriccionesDominio.Any() || llaveAPI.RestriccionesIP.Any();
+            var hayRestricciones = llaveAPI.RestriccionesDominio.Any() || llaveAPI.RestriccionesIP.Any();
 
-            if (!hayRestricciiones)
+            if (!hayRestricciones)
             {
                 return true;
             }
@@ -123,21 +126,41 @@ namespace WebAPIAutores.Middlewares
             var peticionSuperaLasRestriccionesDeDominio =
                     PeticionSuperaLasRestriccionesDeDominio(llaveAPI.RestriccionesDominio, httpContext);
 
-            return peticionSuperaLasRestriccionesDeDominio;
+            var peticionSuperaLasRestriccionesDeIP =
+                    PeticionSuperaLasRestriccionesDeIP(llaveAPI.RestriccionesIP, httpContext);
 
+            return peticionSuperaLasRestriccionesDeDominio || peticionSuperaLasRestriccionesDeIP;
+        }
+
+        private bool PeticionSuperaLasRestriccionesDeIP(List<RestriccionIP> restricciones, HttpContext httpContext)
+        {
+            if (restricciones == null || restricciones.Count == 0)
+            {
+                return false;
+            }
+
+            var IP = httpContext.Connection.RemoteIpAddress.ToString();
+
+            if (IP == string.Empty)
+            {
+                return false;
+            }
+
+            var superaRestriccion = restricciones.Any(x => x.IP == IP);
+            return superaRestriccion;
         }
 
         private bool PeticionSuperaLasRestriccionesDeDominio(List<RestriccionDominio> restricciones,
             HttpContext httpContext)
         {
-            if ( restricciones == null || restricciones.Count == 0)
+            if (restricciones == null || restricciones.Count == 0)
             {
                 return false;
             }
 
             var referer = httpContext.Request.Headers["Referer"].ToString();
 
-            if (referer == String.Empty)
+            if (referer == string.Empty)
             {
                 return false;
             }
@@ -145,10 +168,8 @@ namespace WebAPIAutores.Middlewares
             Uri myUri = new Uri(referer);
             string host = myUri.Host;
 
-            var superarRestriccion = restricciones.Any(x => x.Dominio == host);
-            return superarRestriccion;
+            var superaRestriccion = restricciones.Any(x => x.Dominio == host);
+            return superaRestriccion;
         }
-
-        
     }
 }
